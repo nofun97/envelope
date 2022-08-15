@@ -36,6 +36,8 @@ def generateEgressesFile(config):
 
 def main():
     if not sys.argv[1:2]:
+        print(CONFIG_FILE)
+    else:
         p = subprocess.run(
             'jsonnet /work/config.jsonnet',
             shell=True,

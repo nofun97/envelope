@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 from dataclasses import dataclass
-import json
 import os
 import subprocess
 import time
@@ -44,12 +43,12 @@ def main():
         check=True,
         capture_output=True,
     )
-    files = [f for f in p.stdout.split('\n') if f]
+    files = [f for f in str(p.stdout, 'utf-8').split('\n') if f]
 
-    for _ in changes(*files):
+    for (filename, _) in changes(*files):
         try:
             p = subprocess.run(
-                '/envelope/bin/reconfigure',
+                f'/envelope/bin/reconfigure {filename}',
                 shell=True,
                 check=True,
             )

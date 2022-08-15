@@ -59,7 +59,8 @@ def reconfigure(changedFiles):
             )
 
     print('Reload nginx config')
-    subprocess.run('nginx -s reload', shell=True)
+    subprocess.run('nginx -t -c /var/lib/nginx/nginx.conf', shell=True, check=True)
+    subprocess.run('nginx -s reload', shell=True, check=True)
 
     print('Reconfigured')
 

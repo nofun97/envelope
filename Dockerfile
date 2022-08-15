@@ -1,6 +1,6 @@
 FROM alpine
 
-RUN apk add \
+RUN apk --no-cache add \
     alpine-base \
     bash \
     clang \

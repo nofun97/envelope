@@ -6,11 +6,6 @@ import os
 import subprocess
 import time
 
-CONFIG_FILE = '/work/config.jsonnet'
-
-WIRING_FILE = '/work/wiring.env'
-EGRESSES_FILE = '/var/lib/nginx/egresses.conf'
-
 POLL_INTERVAL = 0.5
 
 @dataclass
@@ -24,64 +19,42 @@ def changes(*filenames):
         filename: Stat(mtime=None, content=None)
         for filename in filenames
     }
+    for filename in filenames:
+        yield (filename, False)
+
     while True:
         for filename in filenames:
             s = stats[filename]
             newmtime = os.stat(filename).st_mtime
             if s.mtime != newmtime:
-                written = s.mtime is not None
                 s.mtime = newmtime
                 with open(filename) as cf:
                     newcontent = cf.read()
                 if s.content != newcontent:
-                    changed = s.content is not None
+                    if s.content is not None:
+                        yield (filename, True)
                     s.content = newcontent
-                    if changed:
-                        print(f'{filename} changed')
-                    yield (filename, changed)
             else:
                 time.sleep(POLL_INTERVAL)
 
-def generateWiringFile(config):
-    print('Generate', WIRING_FILE)
-    with open(WIRING_FILE, 'w') as w:
-        json.dump({
-            'ingress': f"127.0.0.1:10000",
-            'egresses': {
-                key: f"http://localhost:{config['envelope']}/egresses/{key}"
-                for key in config['egresses']
-            }
-        }, w, indent=2)
-        print(file=w)
-
-def generateEgressesFile(config):
-    print('Generate', EGRESSES_FILE)
-    with open(EGRESSES_FILE, 'w') as w:
-        for (name, egress) in sorted(config['egresses'].items()):
-            print(f"""
-                location /egresses/{name} {{
-                    rewrite ^/egresses/{name}/(.*)$ /$1 break;
-                    proxy_pass {egress.replace('localhost', 'host.docker.internal')};
-                }}
-            """, file=w)
-
 def main():
-    for _ in changes(CONFIG_FILE):
-        p = subprocess.run(
-            'jsonnet /work/config.jsonnet',
-            shell=True,
-            check=True,
-            capture_output=True,
-        )
-        p.check_returncode()
+    p = subprocess.run(
+        '/envelope/bin/reconfigure',
+        shell=True,
+        check=True,
+        capture_output=True,
+    )
+    files = [f for f in p.stdout.split('\n') if f]
 
-        config = json.loads(p.stdout)
-
-        generateWiringFile(config)
-        generateEgressesFile(config)
-
-        print('Reload nginx config')
-        subprocess.run('nginx -s reload', shell=True)
+    for _ in changes(*files):
+        try:
+            p = subprocess.run(
+                '/envelope/bin/reconfigure',
+                shell=True,
+                check=True,
+            )
+        except Exception as e:
+            print(f"Error calling reconfigure: {e}")
 
 if __name__ == '__main__':
     main()

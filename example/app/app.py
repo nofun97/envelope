@@ -3,23 +3,27 @@
 import difflib
 from http import server
 import json
-import requests
 import sys
+import urllib.request
 
 wiring = json.load(open(sys.argv[1]))
 ingress = wiring['ingress']
 foo = wiring['egresses']['foo']
 bar = wiring['egresses']['bar']
 
+def get(url):
+    with urllib.request.urlopen(url) as f:
+        return str(f.read(), 'utf-8')
+
 class MyServer(server.BaseHTTPRequestHandler):
     def do_GET(self):
         print(self.path)
         try:
-            fooData = requests.get(foo)
-            barData = requests.get(bar)
+            fooData = get(foo)
+            barData = get(bar)
             diff = difflib.context_diff(
-                fooData.text.split('\n'),
-                barData.text.split('\n'),
+                fooData.split('\n'),
+                barData.split('\n'),
                 fromfile='foo',
                 tofile='bar',
                 lineterm='',

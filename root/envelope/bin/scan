@@ -13,15 +13,17 @@ class Stat:
     content: str
 
 def changes(*filenames):
-    print(f'watching: {".".join(map(repr, filenames))}')
+    print(f'Watching: {".".join(map(repr, filenames))}')
     stats = {
         filename: Stat(mtime=None, content=None)
         for filename in filenames
     }
-    for filename in filenames:
-        yield (filename, False)
-
+    oldfilenames = filenames
     while True:
+        if oldfilenames != filenames:
+            print(f'Now watching: {".".join(map(repr, filenames))}')
+            oldfilenames = filenames
+
         for filename in filenames:
             s = stats[filename]
             newmtime = os.stat(filename).st_mtime
@@ -31,29 +33,50 @@ def changes(*filenames):
                     newcontent = cf.read()
                 if s.content != newcontent:
                     if s.content is not None:
-                        yield (filename, True)
+                        filenames = yield [filename]
                     s.content = newcontent
             else:
                 time.sleep(POLL_INTERVAL)
 
-def main():
+def reconfigure(changedFiles):
     p = subprocess.run(
-        '/envelope/bin/reconfigure',
+        f'/envelope/bin/reconfigure {" ".join(f for (f, _) in changedFiles)}',
         shell=True,
         check=True,
         capture_output=True,
     )
-    files = [f for f in str(p.stdout, 'utf-8').split('\n') if f]
 
-    for (filename, _) in changes(*files):
-        try:
-            p = subprocess.run(
-                f'/envelope/bin/reconfigure {filename}',
-                shell=True,
-                check=True,
+    files = []
+    for cmd in str(p.stdout, 'utf-8').split('\n'):
+        if not cmd:
+            continue
+        if cmd.startswith('WATCH '):
+            files.append(cmd.split(maxsplit=1)[-1])
+        else:
+            raise Exception(
+                'reconfigure output lines must start with "WATCH "'
+                f' (actual output: {cmd!r}'
             )
-        except Exception as e:
-            print(f"Error calling reconfigure: {e}")
+
+    print('Reload nginx config')
+    subprocess.run('nginx -s reload', shell=True)
+
+    print('Reconfigured')
+
+    return files
+
+def main():
+    files = reconfigure([])
+
+    changeStream = changes(*files)
+    changedFiles = next(changeStream)
+    while True:
+        # try:
+        files = reconfigure(changedFiles)
+        # except Exception as e:
+        # print(f"Error in reconfigure: {e}")
+
+        changedFiles = changeStream.send(files)
 
 if __name__ == '__main__':
     main()

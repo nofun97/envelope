@@ -11,8 +11,11 @@ CONFIG_FILE = '/work/config.jsonnet'
 WIRING_FILE = '/work/wiring.env'
 EGRESSES_FILE = '/var/lib/nginx/egresses.conf'
 
+def report(*args):
+    print(*args, file=sys.stderr)
+
 def generateWiringFile(config):
-    print('Generate', WIRING_FILE)
+    report('Generate', WIRING_FILE)
     with open(WIRING_FILE, 'w') as w:
         json.dump({
             'ingress': f"127.0.0.1:10000",
@@ -24,7 +27,7 @@ def generateWiringFile(config):
         print(file=w)
 
 def generateEgressesFile(config):
-    print('Generate', EGRESSES_FILE)
+    report('Generate', EGRESSES_FILE)
     with open(EGRESSES_FILE, 'w') as w:
         for (name, egress) in sorted(config['egresses'].items()):
             print(f"""
@@ -35,22 +38,18 @@ def generateEgressesFile(config):
             """, file=w)
 
 def main():
-    if not sys.argv[1:2]:
-        print(CONFIG_FILE)
-    else:
-        p = subprocess.run(
-            'jsonnet /work/config.jsonnet',
-            shell=True,
-            check=True,
-            capture_output=True,
-        )
-        config = json.loads(p.stdout)
+    p = subprocess.run(
+        'jsonnet /work/config.jsonnet',
+        shell=True,
+        check=True,
+        capture_output=True,
+    )
+    config = json.loads(p.stdout)
 
-        generateWiringFile(config)
-        generateEgressesFile(config)
+    generateWiringFile(config)
+    generateEgressesFile(config)
 
-        print('Reload nginx config')
-        subprocess.run('nginx -s reload', shell=True)
+    print(f'WATCH {CONFIG_FILE}')
 
 if __name__ == '__main__':
     main()

@@ -39,7 +39,7 @@ def generateEgressesFile(config):
 
 def main():
     p = subprocess.run(
-        'jsonnet /work/config.jsonnet',
+        f'jsonnet {CONFIG_FILE}',
         shell=True,
         check=True,
         capture_output=True,

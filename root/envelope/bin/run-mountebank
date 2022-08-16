@@ -1,0 +1,39 @@
+#!/bin/sh
+
+function start() {
+    mb start --protofile /etc/mountebank/protocols.json &
+
+    echo 'Waiting for mb to start...'
+    sleep 0.5
+    until curl -fail -s http://localhost:2525/; do
+        sleep 0.1
+    done
+
+    for file in /etc/mountebank/config.d/*; do
+        curl -i -X POST -H 'Content-Type: application/json' --data @"$file" \
+            http://localhost:2525/imposters
+    done
+
+    while true; do
+        sleep 86400
+    done
+}
+
+function stop() {
+    mb stop
+}
+
+function restart() {
+    stop()
+
+    while curl -fail -s http://localhost:2525/; do
+        sleep 0.1
+    done
+
+    start()
+}
+
+trap EXIT stop
+trap HUP restart
+
+start

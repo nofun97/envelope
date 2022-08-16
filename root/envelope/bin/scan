@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
 
 from dataclasses import dataclass
+from importlib.metadata import files
 import os
 import subprocess
 import time
+import traceback
+import yaml
 
 POLL_INTERVAL = 0.5
+S6_RC_ACTIVATION_DIR = '/etc/s6-overlay/s6-rc.d/user/contents.d'
+
+def activationfile(service):
+    return os.path.join(S6_RC_ACTIVATION_DIR, service)
 
 @dataclass
 class Stat:
     mtime: int
     content: str
 
-def changes(*filenames):
+def changes(filenames):
     print(f'Watching: {".".join(map(repr, filenames))}')
     stats = {
         filename: Stat(mtime=None, content=None)
@@ -33,25 +40,34 @@ def changes(*filenames):
                     newcontent = cf.read()
                 if s.content != newcontent:
                     if s.content is not None:
-                        filenames = yield [filename]
+                        filenames = yield {filename}
                     s.content = newcontent
             else:
                 time.sleep(POLL_INTERVAL)
 
 def reconfigure(changedFiles):
-    p = subprocess.run(
-        f'/envelope/bin/reconfigure {" ".join(f for (f, _) in changedFiles)}',
-        shell=True,
-        check=True,
-        capture_output=True,
-    )
+    try:
+        p = subprocess.run(
+            f'/envelope/bin/reconfigure {" ".join(changedFiles)}',
+            shell=True,
+            capture_output=True,
+        )
+        p.check_returncode()
+    except Exception as e:
+        print(e)
+        print(f"\033[1;31m{str(p.stderr, 'utf-8')}\033[0m")
+        print(f"\033[1;32m{str(p.stdout, 'utf-8')}\033[0m")
+        raise
 
-    files = []
+    files = set()
+    activations = set()
     for cmd in str(p.stdout, 'utf-8').split('\n'):
         if not cmd:
             continue
         if cmd.startswith('WATCH '):
-            files.append(cmd.split(maxsplit=1)[-1])
+            files.add(cmd.split(maxsplit=1)[-1])
+        elif cmd.startswith('ACTIVATE '):
+            activations.add(cmd.split(maxsplit=1)[-1])
         else:
             raise Exception(
                 'reconfigure output lines must start with "WATCH "'
@@ -62,22 +78,25 @@ def reconfigure(changedFiles):
     subprocess.run('nginx -t -c /var/lib/nginx/nginx.conf', shell=True, check=True)
     subprocess.run('nginx -s reload', shell=True, check=True)
 
-    print('Reconfigured')
-
-    return files
+    return files, activations
 
 def main():
-    files = reconfigure([])
+    files, activations = reconfigure([])
+    try:
+        changeStream = changes(files)
+        changedFiles = next(changeStream)
+        while True:
+            files, latestActivations = reconfigure(changedFiles)
 
-    changeStream = changes(*files)
-    changedFiles = next(changeStream)
-    while True:
-        # try:
-        files = reconfigure(changedFiles)
-        # except Exception as e:
-        # print(f"Error in reconfigure: {e}")
+            for service in latestActivations - activations:
+                with open(activationfile(service), 'w'): pass
+            for service in activations - latestActivations:
+                os.unlink(activationfile(service))
 
-        changedFiles = changeStream.send(files)
+            changedFiles = changeStream.send(files)
+    finally:
+        for service in activations:
+            os.unlink(activationfile(service))
 
 if __name__ == '__main__':
     main()

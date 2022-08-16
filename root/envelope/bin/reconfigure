@@ -2,12 +2,14 @@
 
 from dataclasses import dataclass
 import json
-import os
-import subprocess
 import sys
 
+import jsonnet
+
+# Input
 CONFIG_FILE = '/work/config.jsonnet'
 
+# Outputs
 WIRING_FILE = '/work/wiring.env'
 EGRESSES_FILE = '/var/lib/nginx/egresses.conf'
 
@@ -24,7 +26,6 @@ def generateWiringFile(config):
                 for key in config['egresses']
             }
         }, w, indent=2)
-        print(file=w)
 
 def generateEgressesFile(config):
     report('Generate', EGRESSES_FILE)
@@ -38,13 +39,8 @@ def generateEgressesFile(config):
             """, file=w)
 
 def main():
-    p = subprocess.run(
-        f'jsonnet {CONFIG_FILE}',
-        shell=True,
-        check=True,
-        capture_output=True,
-    )
-    config = json.loads(p.stdout)
+    with open(CONFIG_FILE) as cf:
+        config = jsonnet.load(cf)
 
     generateWiringFile(config)
     generateEgressesFile(config)

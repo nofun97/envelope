@@ -38,7 +38,7 @@ restart() {
     start
 }
 
-trap EXIT stop
-trap HUP restart
+trap stop EXIT
+trap restart SIGHUP
 
 start

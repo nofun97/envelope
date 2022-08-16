@@ -9,10 +9,13 @@ start() {
         sleep 0.1
     done
 
-    for file in $(ls /etc/mountebank/config.d); do
-        curl -i -X POST -H 'Content-Type: application/json' --data @"$file" \
-            http://localhost:2525/imposters
-    done
+    (
+        cd /etc/mountebank/config.d
+        for file in $(ls); do
+            curl -i -X POST -H 'Content-Type: application/json' --data @"$file" \
+                http://localhost:2525/imposters
+        done
+    )
 
     echo 'Started'
 

@@ -89,9 +89,9 @@ def reconfigure(changedFiles, oldActivations):
     subprocess.run('nginx -t -c /var/lib/nginx/nginx.conf', shell=True, check=True)
     subprocess.run('nginx -s reload', shell=True, check=True)
 
-    if oldActivations != newActivations:
-        logging.info('Update activations')
-        newActivations = updateActivations(oldActivations, newActivations)
+    # if oldActivations != newActivations:
+    logging.info('Update activations')
+    newActivations = updateActivations(oldActivations, newActivations)
 
     return files, newActivations
 

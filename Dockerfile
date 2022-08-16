@@ -47,7 +47,8 @@ RUN npm i -g \
     mountebank-grpc-mts
 
 RUN pip3 install \
-    PyYAML
+    PyYAML \
+    toml
 
 ENV PATH=/envelope/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     GOBIN=/envelope/bin \

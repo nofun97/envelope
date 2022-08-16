@@ -1,2 +1,4 @@
 #!/command/execlineb -P
-/envelope/bin/run-mountebank
+/usr/local/bin/mb start \
+    --protofile /etc/mountebank/protocols.json \
+    --configfile /etc/mountebank/all.config.json

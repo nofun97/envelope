@@ -9,14 +9,14 @@ apps. It is not yet suitable for production usage.
 ## Kick the tyres
 
 0. Checkout this repo.
-1. `cd` to the repo root and run the following commands:
+1. `cd` to the repo root and run the following commands.
 
     ```sh
     cp example/config.jsonnet .
     docker build -tenvelope-dev .
 
     # Run each line below in a separate shell.
-    docker run -it --rm -v `pwd`:/work -p 9999:80 envelope-dev
+    docker run -it --rm -v `pwd`:/work -p 9999:80 envelope-dev bash
     example/app/run
     example/foo/run
     example/bar/run
@@ -26,12 +26,13 @@ apps. It is not yet suitable for production usage.
 3. Edit config.jsonnet (your copy, not the one in the example directory) switch
    foo and bar's ports around then save the file.
 4. Reload the page.
-5. For cleanup purposes, Ctrl-C won't work in the docker container. Kill it via
-   docker:
+5. Use Ctrl-D to exit the container.
 
-    ```sh
-    docker rm -f $(docker ps -q --filter ancestor=envelope-dev)
-    ```
+To run the container in the background, run the following command.
+
+```sh
+docker run -v `pwd`:/work -p 9999:80 envelope-dev
+```
 
 ## What is going on?
 
@@ -48,3 +49,4 @@ The above demo illustrates the following features of the envelope:
 5. A `wiring.env` file is automatically created in the repo root. The app can
    use this to discover how to listen for traffic coming into the envelope and
    how to reach the services it depends on.
+6. Automatic startup and wiring of [mountebank](http://www.mbtest.org/) stubs.

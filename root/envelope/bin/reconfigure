@@ -2,50 +2,54 @@
 
 from dataclasses import dataclass
 import json
+import re
 import sys
 
-import jsonnet
+import config
 
 # Input
-CONFIG_FILE = '/work/config.jsonnet'
+CONFIG_FILE = '/work/config.{}'
 
 # Outputs
 WIRING_FILE = '/work/wiring.env'
-EGRESSES_FILE = '/var/lib/nginx/egresses.conf'
+
+LOCALHOST_RE = re.compile(r'://localhost\b')
 
 def report(*args):
     print(*args, file=sys.stderr)
 
-def generateWiringFile(config):
+def generateWiringFile(cfg):
     report('Generate', WIRING_FILE)
     with open(WIRING_FILE, 'w') as w:
         json.dump({
             'ingress': f"127.0.0.1:10000",
             'egresses': {
-                key: f"http://localhost:{config['envelope']}/egresses/{key}"
-                for key in config['egresses']
+                key: f"http://localhost:{cfg['envelope']}/egresses/{key}"
+                for key in cfg['egresses']
             }
         }, w, indent=2)
 
-def generateEgressesFile(config):
-    report('Generate', EGRESSES_FILE)
-    with open(EGRESSES_FILE, 'w') as w:
-        for (name, egress) in sorted(config['egresses'].items()):
-            print(f"""
-                location /egresses/{name} {{
-                    rewrite ^/egresses/{name}/(.*)$ /$1 break;
-                    proxy_pass {egress.replace('localhost', 'host.docker.internal')};
-                }}
-            """, file=w)
+def generateEgressesFile(cfg):
+    for (service, egress) in sorted(cfg['egresses'].items()):
+        if isinstance(egress, list):
+            if len(egress) != 1:
+                raise NotImplementedError("len(egress) != 1 not supported")
+            [egress] = egress
+
+        if isinstance(egress, str):
+            egress = egress.replace('://localhost', '://host.docker.internal')
+            config.cmd.proxy(f'/egresses/{service}', egress)
+        elif isinstance(egress, dict):
+            if 'mountebank' in egress:
+                config.cmd.mountebank(service, egress['mountebank'])
 
 def main():
-    with open(CONFIG_FILE) as cf:
-        config = jsonnet.load(cf)
+    (cfg, cfgpath) = config.loadAny(CONFIG_FILE)
 
-    generateWiringFile(config)
-    generateEgressesFile(config)
+    generateEgressesFile(cfg)
+    generateWiringFile(cfg)
 
-    print(f'WATCH {CONFIG_FILE}')
+    config.cmd.watch(cfgpath)
 
 if __name__ == '__main__':
     main()

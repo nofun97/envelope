@@ -16,11 +16,11 @@ def activationfile(service):
 def updateActivations(oldActivations, newActivations):
     for service in newActivations - oldActivations:
         logging.info(f'Activating service {service}')
-        with open(activationfile(service), 'w'): pass
+        os.system(f's6-rc -u change {service}')
 
     for service in oldActivations - newActivations:
         logging.info(f'Deactivating service {service}')
-        os.unlink(activationfile(service))
+        os.system(f's6-rc -d change {service}')
 
     return newActivations
 
@@ -55,7 +55,7 @@ def changes(filenames):
             else:
                 time.sleep(POLL_INTERVAL)
 
-def reconfigure(changedFiles):
+def reconfigure(changedFiles, oldActivations):
     try:
         p = subprocess.run(
             f'/envelope/bin/reconfigure {" ".join(changedFiles)}',
@@ -70,7 +70,7 @@ def reconfigure(changedFiles):
         raise
 
     files = set()
-    activations = set()
+    newActivations = set()
     for cmd in str(p.stdout, 'utf-8').split('\n'):
         logging.info(f'reconfigure: {cmd}')
         if not cmd:
@@ -78,7 +78,7 @@ def reconfigure(changedFiles):
         if cmd.startswith('WATCH '):
             files.add(cmd.split(maxsplit=1)[-1])
         elif cmd.startswith('ACTIVATE '):
-            activations.add(cmd.split(maxsplit=1)[-1])
+            newActivations.add(cmd.split(maxsplit=1)[-1])
         else:
             raise Exception(
                 'reconfigure output lines must start with "WATCH "'
@@ -89,17 +89,18 @@ def reconfigure(changedFiles):
     subprocess.run('nginx -t -c /var/lib/nginx/nginx.conf', shell=True, check=True)
     subprocess.run('nginx -s reload', shell=True, check=True)
 
-    return files, activations
+    newActivations = updateActivations(oldActivations, newActivations)
+
+    return files, newActivations
 
 def main():
     logging.getLogger().setLevel(logging.INFO)
-    files, activations = reconfigure([])
+    files, activations = reconfigure([], set())
     try:
         changeStream = changes(files)
         changedFiles = next(changeStream)
         while True:
-            files, latestActivations = reconfigure(changedFiles)
-            activations = updateActivations(activations, latestActivations)
+            files, activations = reconfigure(changedFiles, activations)
             changedFiles = changeStream.send(files)
     finally:
         for service in activations:

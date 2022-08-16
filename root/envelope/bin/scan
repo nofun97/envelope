@@ -14,13 +14,13 @@ def activationfile(service):
     return os.path.join(S6_RC_ACTIVATION_DIR, service)
 
 def updateActivations(oldActivations, newActivations):
-    for service in newActivations - oldActivations:
-        logging.info(f'Activating service {service}')
-        os.system(f's6-rc -u change {service}')
-
-    for service in oldActivations - newActivations:
+    for service in oldActivations:
         logging.info(f'Deactivating service {service}')
         os.system(f's6-rc -d change {service}')
+
+    for service in newActivations:
+        logging.info(f'Activating service {service}')
+        os.system(f's6-rc -u change {service}')
 
     return newActivations
 

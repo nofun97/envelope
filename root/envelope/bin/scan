@@ -2,11 +2,10 @@
 
 from dataclasses import dataclass
 from importlib.metadata import files
+import logging
 import os
 import subprocess
 import time
-import traceback
-import yaml
 
 POLL_INTERVAL = 0.5
 S6_RC_ACTIVATION_DIR = '/etc/s6-overlay/s6-rc.d/user/contents.d'
@@ -14,13 +13,24 @@ S6_RC_ACTIVATION_DIR = '/etc/s6-overlay/s6-rc.d/user/contents.d'
 def activationfile(service):
     return os.path.join(S6_RC_ACTIVATION_DIR, service)
 
+def updateActivations(oldActivations, newActivations):
+    for service in newActivations - oldActivations:
+        logging.info(f'Activating service {service}')
+        with open(activationfile(service), 'w'): pass
+
+    for service in oldActivations - newActivations:
+        logging.info(f'Deactivating service {service}')
+        os.unlink(activationfile(service))
+
+    return newActivations
+
 @dataclass
 class Stat:
     mtime: int
     content: str
 
 def changes(filenames):
-    print(f'Watching: {".".join(map(repr, filenames))}')
+    logging.info(f'Watching: {".".join(map(repr, filenames))}')
     stats = {
         filename: Stat(mtime=None, content=None)
         for filename in filenames
@@ -28,7 +38,7 @@ def changes(filenames):
     oldfilenames = filenames
     while True:
         if oldfilenames != filenames:
-            print(f'Now watching: {".".join(map(repr, filenames))}')
+            logging.info(f'Now watching: {".".join(map(repr, filenames))}')
             oldfilenames = filenames
 
         for filename in filenames:
@@ -54,15 +64,15 @@ def reconfigure(changedFiles):
         )
         p.check_returncode()
     except Exception as e:
-        print(e)
-        print(f"\033[1;31m{str(p.stderr, 'utf-8')}\033[0m")
-        print(f"\033[1;32m{str(p.stdout, 'utf-8')}\033[0m")
+        logging.error(e)
+        logging.error(f"\033[1;31m{str(p.stderr, 'utf-8')}\033[0m")
+        logging.error(f"\033[1;32m{str(p.stdout, 'utf-8')}\033[0m")
         raise
 
     files = set()
     activations = set()
     for cmd in str(p.stdout, 'utf-8').split('\n'):
-        print(f'reconfigure: {cmd}')
+        logging.info(f'reconfigure: {cmd}')
         if not cmd:
             continue
         if cmd.startswith('WATCH '):
@@ -75,25 +85,21 @@ def reconfigure(changedFiles):
                 f' (actual output: {cmd!r}'
             )
 
-    print('Reload nginx config')
+    logging.info('Reload nginx config')
     subprocess.run('nginx -t -c /var/lib/nginx/nginx.conf', shell=True, check=True)
     subprocess.run('nginx -s reload', shell=True, check=True)
 
     return files, activations
 
 def main():
+    logging.getLogger().setLevel(logging.INFO)
     files, activations = reconfigure([])
     try:
         changeStream = changes(files)
         changedFiles = next(changeStream)
         while True:
             files, latestActivations = reconfigure(changedFiles)
-
-            for service in latestActivations - activations:
-                with open(activationfile(service), 'w'): pass
-            for service in activations - latestActivations:
-                os.unlink(activationfile(service))
-
+            activations = updateActivations(activations, latestActivations)
             changedFiles = changeStream.send(files)
     finally:
         for service in activations:

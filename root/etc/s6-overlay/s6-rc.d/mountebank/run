@@ -1,2 +1,2 @@
 #!/command/execlineb -P
-/usr/local/bin/mb start --protofile /etc/mountebank/protocols.json
+/envelope/bin/run-mountebank

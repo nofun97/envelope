@@ -62,6 +62,7 @@ def reconfigure(changedFiles):
     files = set()
     activations = set()
     for cmd in str(p.stdout, 'utf-8').split('\n'):
+        print(f'reconfigure: {cmd}')
         if not cmd:
             continue
         if cmd.startswith('WATCH '):

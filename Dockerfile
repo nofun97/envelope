@@ -17,6 +17,7 @@ RUN apk --no-cache add \
     alpine-base \
     bash \
     clang \
+    curl \
     go \
     htop \
     nginx \
@@ -47,7 +48,6 @@ RUN npm i -g \
 
 RUN pip3 install \
     PyYAML
-
 
 ENV PATH=/envelope/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     GOBIN=/envelope/bin \

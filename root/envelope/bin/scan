@@ -116,7 +116,7 @@ def reconfigure(changedFiles, oldActivations):
         logging.error(f"\033[1;32m{str(p.stdout, 'utf-8')}\033[0m")
         raise
     if p.stderr:
-        logging.info(f"\033[1;31m{str(p.stderr, 'utf-8')}\033[0m")
+        logging.info(str(p.stderr, 'utf-8'))
 
     watches = set()
     newActivations = set()

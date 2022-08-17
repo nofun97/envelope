@@ -18,8 +18,10 @@ NGINX_EGRESSES_CONF = '/etc/nginx/egresses.conf'
 
 MOUNTEBANK_ALL_CONFIG = '/etc/mountebank/all.config.json'
 
+
 def activationfile(service):
     return os.path.join(S6_RC_ACTIVATION_DIR, service)
+
 
 def updateActivations(oldActivations, newActivations):
     # We haven't figured out how to tell existing services to reload their
@@ -35,10 +37,12 @@ def updateActivations(oldActivations, newActivations):
 
     return newActivations
 
+
 @dataclass
 class Stat:
     mtime: int
     content: str
+
 
 def changes(filenames):
     logging.info(f'Watching: {".".join(map(repr, filenames))}')
@@ -66,11 +70,14 @@ def changes(filenames):
             else:
                 time.sleep(POLL_INTERVAL)
 
+
 def updateMountebankConfig(mountebank, egresses):
     imposters = []
-    port = 11000
+    nextPort = config.portAllocator(11000)
 
     for mb in mountebank:
+        port = nextPort()
+
         egresses.add(Egress(
             service=mb.service,
             target=f'http://localhost:{port}',
@@ -89,9 +96,11 @@ def updateMountebankConfig(mountebank, egresses):
     with open(MOUNTEBANK_ALL_CONFIG, 'w') as f:
         json.dump(cfg, f, indent=2)
 
+
 Egress = collections.namedtuple('Egress', 'service target')
 Proxy = collections.namedtuple('Proxy', 'urlpath target')
 Mountebank = collections.namedtuple('Mountebank', 'service cfgpath watch')
+
 
 def reconfigure(changedFiles, oldActivations):
     try:
@@ -169,6 +178,7 @@ def reconfigure(changedFiles, oldActivations):
 
     return watches, newActivations
 
+
 def main():
     logging.basicConfig(
         level=logging.INFO,
@@ -185,6 +195,7 @@ def main():
             changedFiles = changeStream.send(files)
     finally:
         updateActivations(activations, [])
+
 
 if __name__ == '__main__':
     main()

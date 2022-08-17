@@ -1,3 +1,4 @@
+import jsonnet
 import json
 import os
 import sys
@@ -7,9 +8,9 @@ import yaml
 MOUNTEBANK_CONFIG_D = '/etc/mountebank/config.d'
 
 # local
-import jsonnet
 
-def load(path: str, ext: list[str]=None):
+
+def load(path: str, ext: list[str] = None):
     if ext is None:
         ext = os.path.splitext(path)[1][1:]
 
@@ -25,6 +26,8 @@ def load(path: str, ext: list[str]=None):
         return load(f)
 
 # Example: loadAny('/etc/foobar.{}.in')
+
+
 def loadAny(pathspec, exts=['json', 'jsonnet', 'toml', 'yaml', 'yml']):
     for ext in exts:
         path = pathspec.format(ext)
@@ -36,12 +39,24 @@ def loadAny(pathspec, exts=['json', 'jsonnet', 'toml', 'yaml', 'yml']):
     exts = ','.join(exts)
     raise Exception(f'no matches for {pathspec.format(f"{{{exts}}}")}')
 
+
+def portAllocator(base=12000):
+    def allocatePort():
+        nonlocal base
+        port = base
+        base += 1
+        return port
+    return allocatePort
+
+
 def _cmd(cmd: str, arg):
     print(f'{cmd} {json.dumps(arg)}')
+
 
 def parseCmd(cmd: str):
     op, args = cmd.split(' ', maxsplit=1)
     return (op, json.loads(args))
+
 
 class cmd:
     @staticmethod
@@ -73,7 +88,8 @@ class cmd:
             cfgpath = os.path.join('/work', cfgpath.lstrip('/'))
             if not os.path.isfile(cfgpath):
                 raise Exception(f"missing mountebank config {cfgpath}")
-            print(f'Symlinking mountebank config {cfgpath} -> {destpath}', file=sys.stderr)
+            print(
+                f'Symlinking mountebank config {cfgpath} -> {destpath}', file=sys.stderr)
             os.symlink(cfgpath, destpath)
         else:
             print(f'Creating mountebank config {destpath}', file=sys.stderr)

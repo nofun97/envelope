@@ -1,3 +1,4 @@
+import contextlib
 import jsonnet
 import json
 import os
@@ -5,9 +6,9 @@ import sys
 import toml
 import yaml
 
-MOUNTEBANK_CONFIG_D = '/etc/mountebank/config.d'
+import envelope_pb2
 
-# local
+MOUNTEBANK_CONFIG_D = '/etc/mountebank/config.d'
 
 
 def load(path: str, ext: list[str] = None):
@@ -49,33 +50,68 @@ def portAllocator(base=12000):
     return allocatePort
 
 
-def _cmd(cmd: str, arg):
-    print(f'{cmd} {json.dumps(arg)}')
+def parseCommands(cmds: bytearray):
+    commands = envelope_pb2.Commands()
+    commands.ParseFromString(cmds)
+    return commands
 
 
-def parseCmd(cmd: str):
-    op, args = cmd.split(' ', maxsplit=1)
-    return (op, json.loads(args))
+# def fixInjections(mb):
+#     match mb:
+#         case {'egresses': egresses}:
+#             for egress in egresses.values():
+#                 match egress:
+#                     case {'mountebank': {'stubs': stubs}}:
+#                         for stub in stubs:
+#                             match stub:
+#                                 case {'responses': responses}:
+#                                     for response in responses:
+#                                         match response:
+#                                             case {'inject': {'path': path}}:
+#                                                 with open(path) as f:
+#                                                     data = f.decode('utf-8')
+#                                                     response['inject'] = data
 
 
-class cmd:
-    @staticmethod
-    def activate(service: str):
-        _cmd('ACTIVATE', service)
+class Commands(contextlib.ContextDecorator):
+    def __init__(self, out=sys.stdout.buffer):
+        self._out = out
+        self._cmds = envelope_pb2.Commands()
 
-    @staticmethod
-    def egress(service: str, target: str):
-        _cmd('EGRESS', {'service': service, 'target': target})
+    def __enter__(self):
+        return self
 
-    @staticmethod
-    def proxy(urlpath: str, target: str):
-        _cmd('PROXY', {'urlpath': urlpath, 'target': target})
+    def __exit__(self, *_):
+        self._out.write(self._cmds.SerializeToString())
+        return False
 
-    # cfgpath can be a string or a readable stream.
-    @staticmethod
-    def mountebank(service: str, cfgpath, ext=None):
-        if ext is None:
-            (_, ext) = os.path.splitext(cfgpath)
+    def activate(self, service: str):
+        self._cmds.activations.append(envelope_pb2.Activate(
+            service=service
+        ))
+
+    def egress(self, service: str, target: str):
+        self._cmds.egresses.append(envelope_pb2.Egress(
+            service=service,
+            target=target,
+        ))
+
+    def proxy(self, urlpath: str, target: str):
+        self._cmds.proxies.append(envelope_pb2.Proxy(
+            urlpath=urlpath,
+            target=target,
+        ))
+
+    def mountebank(self, service: str, pathOrData: str | object, ext: str = None):
+        ce = (pathOrData, ext)
+        match ce:
+            case (str(), None):
+                (_, ext) = os.path.splitext(pathOrData)
+            case (_, None):
+                ext = '.json'
+            case (_, str()):
+                if not ext.startswith('.'):
+                    ext = f".{ext}"
         destpath = os.path.join(MOUNTEBANK_CONFIG_D, f'{service}{ext}')
 
         try:
@@ -83,25 +119,17 @@ class cmd:
         except:
             pass
 
-        isfilename = isinstance(cfgpath, str)
+        mb = self._cmds.mountebanks.add(service=service)
+
+        isfilename = isinstance(pathOrData, str)
         if isfilename:
-            cfgpath = os.path.join('/work', cfgpath.lstrip('/'))
-            if not os.path.isfile(cfgpath):
-                raise Exception(f"missing mountebank config {cfgpath}")
-            print(
-                f'Symlinking mountebank config {cfgpath} -> {destpath}', file=sys.stderr)
-            os.symlink(cfgpath, destpath)
+            pathOrData = os.path.join('/work', pathOrData.lstrip('/'))
+            if not os.path.isfile(pathOrData):
+                raise Exception(f"missing mountebank config {pathOrData}")
+            os.symlink(pathOrData, destpath)
+            mb.path = pathOrData
         else:
-            print(f'Creating mountebank config {destpath}', file=sys.stderr)
-            with open(destpath, 'w') as f:
-                f.write(cfgpath.read())
+            mb.json = json.dumps(pathOrData)
 
-        _cmd('MOUNTEBANK', {
-            'service': service,
-            'cfgpath': destpath,
-            'watch': isfilename,
-        })
-
-    @staticmethod
-    def watch(path: str):
-        _cmd('WATCH', path)
+    def watch(self, path: str):
+        self._cmds.watches.append(envelope_pb2.Watch(path=path))

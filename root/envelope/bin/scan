@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import collections
 from dataclasses import dataclass
 from importlib.metadata import files
 import json
@@ -27,13 +26,13 @@ def updateActivations(oldActivations, newActivations):
     # We haven't figured out how to tell existing services to reload their
     # configs, so for now we just bounce everything.
     # if oldActivations != newActivations:
-    for service in oldActivations:
-        logging.info(f'Deactivating service {service}')
-        os.system(f's6-rc -d change {service}')
+    for activation in oldActivations:
+        logging.info(f'Deactivating service {activation.service}')
+        os.system(f's6-rc -d change {activation.service}')
 
-    for service in newActivations:
-        logging.info(f'Activating service {service}')
-        os.system(f's6-rc -u change {service}')
+    for activation in newActivations:
+        logging.info(f'Activating service {activation.service}')
+        os.system(f's6-rc -u change {activation.service}')
 
     return newActivations
 
@@ -44,48 +43,49 @@ class Stat:
     content: str
 
 
-def changes(filenames):
-    logging.info(f'Watching: {".".join(map(repr, filenames))}')
+def changes(watches):
+    logging.info(f'Watching: {".".join(map(repr, watches))}')
     stats = {
-        filename: Stat(mtime=None, content=None)
-        for filename in filenames
+        watch.path: Stat(mtime=None, content=None)
+        for watch in watches
     }
-    oldfilenames = filenames
+    oldWatches = watches
     while True:
-        if oldfilenames != filenames:
-            logging.info(f'Now watching: {".".join(map(repr, filenames))}')
-            oldfilenames = filenames
+        if oldWatches != watches:
+            logging.info(f'Now watching: {".".join(map(repr, watches))}')
+            oldWatches = watches
 
-        for filename in filenames:
-            s = stats[filename]
-            newmtime = os.stat(filename).st_mtime
+        for watch in watches:
+            s = stats[watch.path]
+            newmtime = os.stat(watch.path).st_mtime
             if s.mtime != newmtime:
                 s.mtime = newmtime
-                with open(filename) as cf:
+                with open(watch.path) as cf:
                     newcontent = cf.read()
                 if s.content != newcontent:
                     if s.content is not None:
-                        filenames = yield {filename}
+                        watches = yield [watch]
                     s.content = newcontent
             else:
                 time.sleep(POLL_INTERVAL)
 
 
-def updateMountebankConfig(mountebank, egresses):
+def updateMountebankConfig(mountebanks, egresses):
     imposters = []
     nextPort = config.portAllocator(11000)
 
-    for mb in mountebank:
+    for mb in mountebanks:
         port = nextPort()
 
-        egresses.add(Egress(
-            service=mb.service,
-            target=f'http://localhost:{port}',
-        ))
+        egresses.add(service=mb.service, target=f'http://localhost:{port}')
 
-        cfg = config.load(mb.cfgpath)
+        match mb.WhichOneof('config'):
+            case 'path':
+                cfg = config.load(mb.cfgpath)
+            case 'json':
+                cfg = json.loads(mb.json)
+
         cfg['port'] = port
-        port += 1
 
         imposters.append(cfg)
 
@@ -95,11 +95,6 @@ def updateMountebankConfig(mountebank, egresses):
 
     with open(MOUNTEBANK_ALL_CONFIG, 'w') as f:
         json.dump(cfg, f, indent=2)
-
-
-Egress = collections.namedtuple('Egress', 'service target')
-Proxy = collections.namedtuple('Proxy', 'urlpath target')
-Mountebank = collections.namedtuple('Mountebank', 'service cfgpath watch')
 
 
 def reconfigure(changedFiles, oldActivations):
@@ -118,50 +113,25 @@ def reconfigure(changedFiles, oldActivations):
     if p.stderr:
         logging.info(str(p.stderr, 'utf-8'))
 
-    watches = set()
-    newActivations = set()
-    egresses = set()
-    proxy = set()
-    mountebank = set()
-    for cmd in str(p.stdout, 'utf-8').split('\n'):
-        logging.info(f'reconfigure: {cmd}')
-        if not cmd:
-            continue
+    cmds = config.parseCommands(p.stdout)
 
-        (op, arg) = config.parseCmd(cmd)
-        if op == 'WATCH':
-            watches.add(arg)
-        elif op == 'ACTIVATE':
-            newActivations.add(arg)
-        elif op == 'EGRESS':
-            egresses.add(Egress(**arg))
-        elif op == 'PROXY':
-            proxy.add(Proxy(**arg))
-        elif op == 'MOUNTEBANK':
-            mountebank.add(Mountebank(**arg))
-        else:
-            raise Exception(
-                'reconfigure output lines must start with "WATCH "'
-                f' (actual output: {cmd!r}'
-            )
+    if cmds.mountebanks:
+        cmds.activations.add(service='mountebank')
+        updateMountebankConfig(cmds.mountebanks, cmds.egresses)
+        for mb in cmds.mountebanks:
+            if mb.WhichOneof('config') == 'path':
+                cmds.watches.append(mb.path)
 
-    if mountebank:
-        newActivations.add('mountebank')
-        updateMountebankConfig(mountebank, egresses)
-        for mb in mountebank:
-            if mb.watch:
-                watches.add(mb.cfgpath)
-
-    for egress in egresses:
-        proxy.add(Proxy(
+    for egress in cmds.egresses:
+        cmds.proxies.add(
             urlpath=f'/egresses/{egress.service}',
             target=egress.target,
-        ))
+        )
 
-    if proxy:
+    if cmds.proxies:
         print(f'Generate {NGINX_EGRESSES_CONF}')
         with open(NGINX_EGRESSES_CONF, 'w') as w:
-            for p in sorted(proxy, key=lambda p: p.urlpath):
+            for p in sorted(cmds.proxies, key=lambda p: p.urlpath):
                 print(f"""
                     location {p.urlpath} {{
                         rewrite ^{p.urlpath}/(.*)$ /$1 break;
@@ -169,14 +139,17 @@ def reconfigure(changedFiles, oldActivations):
                     }}
                 """, file=w)
 
+    print(cmds)
+
     logging.info('Reload nginx config')
     subprocess.run('nginx -t -c /etc/nginx/nginx.conf', shell=True, check=True)
     subprocess.run('nginx -s reload', shell=True, check=True)
 
     logging.info('Update activations')
-    newActivations = updateActivations(oldActivations, newActivations)
+    newActivations = updateActivations(
+        oldActivations, cmds.activations)
 
-    return watches, newActivations
+    return cmds.watches, newActivations
 
 
 def main():
@@ -186,13 +159,13 @@ def main():
         datefmt='%Y-%m-%dT%H:%M:%S',
     )
 
-    files, activations = reconfigure([], set())
+    watches, activations = reconfigure([], set())
     try:
-        changeStream = changes(files)
+        changeStream = changes(watches)
         changedFiles = next(changeStream)
         while True:
-            files, activations = reconfigure(changedFiles, activations)
-            changedFiles = changeStream.send(files)
+            watches, activations = reconfigure(changedFiles, activations)
+            changedFiles = changeStream.send(watches)
     finally:
         updateActivations(activations, [])
 

@@ -11,12 +11,14 @@
 # RUN npm run build
 
 #------------------------------------------------------------------------------
-FROM alpine
+FROM alpine:latest
 
 RUN apk --no-cache add \
     alpine-base \
     bash \
-    clang \
+    bash-completion \
+    gcc \
+    g++ \
     curl \
     go \
     htop \
@@ -42,13 +44,17 @@ ADD https://github.com/just-containers/s6-overlay/releases/download/v3.1.0.1/s6-
 RUN tar -C / -Jxpf /tmp/s6-overlay-aarch64.tar.xz
 ENTRYPOINT ["/init"]
 
-RUN npm i -g \
-    mountebank \
-    mountebank-grpc-mts
-
 RUN pip3 install \
+    jsonschema \
     PyYAML \
+    protobuf \
     toml
+
+RUN npm i -g \
+    lodash \
+    mountebank \
+    mountebank-grpc-mts \
+    typescript
 
 ENV PATH=/envelope/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     GOBIN=/envelope/bin \
@@ -60,6 +66,9 @@ RUN mkdir /go && \
     go install github.com/google/go-jsonnet/cmd/jsonnet@latest
 
 COPY /root /
+
+RUN cd /envelope/lib && \
+    protoc --python_out=/envelope/bin envelope.proto
 
 # COPY --from=envision /work/envision/build /web/admin
 

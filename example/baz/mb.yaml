@@ -1,43 +1,20 @@
+name: origin
 protocol: http
 stubs:
   - responses:
-      - is:
-          statusCode: 400
-    predicates:
-      - and:
-          - equals:
-              path: /test
-              method: POST
-              headers:
-                Content-Type: application/json
-          - not:
-              contains:
-                body: requiredField
-              caseSensitive: true
-  - responses:
-      - is:
-          data: >-
-            bW91bnRlYmFuayBpcyB0aGUgZmlyc3Qgb3BlbiBz
-            b3VyY2UgdG9vbCB0byBwcm92aWRlIGNyb3NzLXBs
-            YXRmb3JtLCBtdWx0aS1wcm90b2NvbCB0ZXN0IGRv
-            dWJsZXMgb3ZlciB0aGUgd2lyZS4gU2ltcGx5IHBv
-            aW50IHlvdXIgYXBwbGljYXRpb24gdW5kZXIgdGVz
-            dCB0byBtb3VudGViYW5rIGluc3RlYWQgb2YgdGhl
-            IHJlYWwgZGVwZW5kZW5jeSwgYW5kIHRlc3QgbGlr
-            ZSB5b3Ugd291bGQgd2l0aCB0cmFkaXRpb25hbCBz
-            dHVicyBhbmQgbW9ja3MuCgptb3VudGViYW5rIGlz
-            IHRoZSBtb3N0IGNhcGFibGUgb3BlbiBzb3VyY2Ug
-            c2VydmljZSB2aXJ0dWFsaXphdGlvbiB0b29sIGlu
-            IGV4aXN0ZW5jZSwgYW5kIHdpbGwgY3VyZSB3aGF0
-            IGFpbHMgeW91LCBndWFyYW50ZWVkLgo=
-    predicates:
-      - and:
-          - equals:
-              path: /test
-              method: POST
-              headers:
-                Content-Type: application/json
-          - not:
-              contains:
-                body: requiredField
-              caseSensitive: true
+      - inject: |
+          class State {
+            constructor()
+          }
+          (config) => {
+            config.logger.info('origin called');
+            config.state.requests = (config.state.requests || 0) + 1;
+            return {
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                count: config.state.requests,
+              }),
+            };
+          }

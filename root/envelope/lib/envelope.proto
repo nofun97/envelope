@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package envelope;
+
+message Commands {
+    repeated Watch watches = 1;
+    repeated Activate activations = 2;
+    repeated Egress egresses = 3;
+    repeated Proxy proxies = 4;
+    repeated Mountebank mountebanks = 5;
+}
+
+message Watch { string path = 1; }
+
+message Activate { string service = 1; }
+
+message Egress {
+    string service = 1;
+    string target = 2;
+}
+
+message Proxy {
+    string urlpath = 1;
+    string target = 2;
+}
+
+message Mountebank {
+    string service = 1;
+    oneof config {
+        string path = 2;
+        string json = 3;
+    }
+}

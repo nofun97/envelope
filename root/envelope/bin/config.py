@@ -15,9 +15,12 @@ def load(path: str, ext: list[str] = None):
     if ext is None:
         ext = os.path.splitext(path)[1][1:]
 
+    def loadjsonnet(f):
+        return jsonnet.load(f, path=path)
+
     load = {
         'json': json.load,
-        'jsonnet': jsonnet.load,
+        'jsonnet': loadjsonnet,
         'yaml': yaml.safe_load,
         'yml': yaml.safe_load,
         'toml': toml.load,
@@ -56,23 +59,6 @@ def parseCommands(cmds: bytearray):
     return commands
 
 
-# def fixInjections(mb):
-#     match mb:
-#         case {'egresses': egresses}:
-#             for egress in egresses.values():
-#                 match egress:
-#                     case {'mountebank': {'stubs': stubs}}:
-#                         for stub in stubs:
-#                             match stub:
-#                                 case {'responses': responses}:
-#                                     for response in responses:
-#                                         match response:
-#                                             case {'inject': {'path': path}}:
-#                                                 with open(path) as f:
-#                                                     data = f.decode('utf-8')
-#                                                     response['inject'] = data
-
-
 class Commands(contextlib.ContextDecorator):
     def __init__(self, out=sys.stdout.buffer):
         self._out = out
@@ -86,21 +72,21 @@ class Commands(contextlib.ContextDecorator):
         return False
 
     def activate(self, service: str):
-        self._cmds.activations.append(envelope_pb2.Activate(
+        self._cmds.activations.add(
             service=service
-        ))
+        )
 
     def egress(self, service: str, target: str):
-        self._cmds.egresses.append(envelope_pb2.Egress(
+        self._cmds.egresses.add(
             service=service,
             target=target,
-        ))
+        )
 
     def proxy(self, urlpath: str, target: str):
-        self._cmds.proxies.append(envelope_pb2.Proxy(
+        self._cmds.proxies.add(
             urlpath=urlpath,
             target=target,
-        ))
+        )
 
     def mountebank(self, service: str, pathOrData: str | object, ext: str = None):
         ce = (pathOrData, ext)
@@ -132,4 +118,4 @@ class Commands(contextlib.ContextDecorator):
             mb.json = json.dumps(pathOrData)
 
     def watch(self, path: str):
-        self._cmds.watches.append(envelope_pb2.Watch(path=path))
+        self._cmds.watches.add(path=path)

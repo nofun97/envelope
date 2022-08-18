@@ -23,17 +23,17 @@ def report(*args):
 
 def generateEgressesFile(cmds, cfg):
     for (service, egress) in sorted(cfg['egresses'].items()):
-        if isinstance(egress, list):
-            if len(egress) != 1:
-                raise NotImplementedError("len(egress) != 1 not supported")
-            [egress] = egress
-
-        if isinstance(egress, str):
-            egress = egress.replace('://localhost', '://host.docker.internal')
-            cmds.proxy(f'/egresses/{service}', egress)
-        elif isinstance(egress, dict):
-            if 'mountebank' in egress:
-                cmds.mountebank(service, egress['mountebank'])
+        match egress:
+            case list():
+                if len(egress) != 1:
+                    raise NotImplementedError("len(egress) != 1 not supported")
+                [egress] = egress
+            case str():
+                egress = egress.replace('://localhost',
+                                        '://host.docker.internal')
+                cmds.proxy(f'/egresses/{service}', egress)
+            case {'mountebank': mb}:
+                cmds.mountebank(service, mb)
 
 
 def generateWiringFile(cfg):

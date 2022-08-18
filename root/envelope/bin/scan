@@ -3,10 +3,12 @@
 from dataclasses import dataclass
 from importlib.metadata import files
 import json
+import jsonschema
 import logging
 import os
 import subprocess
 import time
+import traceback
 
 import config
 
@@ -70,7 +72,30 @@ def changes(watches):
                 time.sleep(POLL_INTERVAL)
 
 
-def updateMountebankConfig(mountebanks, egresses):
+_validator = None
+
+
+def tweakImposter(cmds, imposter):
+    _validator.validate({'imposters': [imposter]})
+
+    match imposter:
+        case {'egresses': egresses}:
+            for egress in egresses.values():
+                match egress:
+                    case {'mountebank': {'stubs': stubs}}:
+                        for stub in stubs:
+                            match stub:
+                                case {'responses': responses}:
+                                    for response in responses:
+                                        match response:
+                                            case {'inject': {'path': path}}:
+                                                cmds.watches.add(path=path)
+                                                with open(path) as f:
+                                                    data = f.decode('utf-8')
+                                                    response['inject'] = data
+
+
+def updateMountebankConfig(cmds, mountebanks, egresses):
     imposters = []
     nextPort = config.portAllocator(11000)
 
@@ -81,75 +106,82 @@ def updateMountebankConfig(mountebanks, egresses):
 
         match mb.WhichOneof('config'):
             case 'path':
-                cfg = config.load(mb.cfgpath)
+                imposter = config.load(mb.path)
             case 'json':
-                cfg = json.loads(mb.json)
+                imposter = json.loads(mb.json)
 
-        cfg['port'] = port
+        imposter['port'] = port
+        tweakImposter(cmds, imposter)
 
-        imposters.append(cfg)
+        imposters.append(imposter)
 
-    cfg = {
+    imposter = {
         "imposters": imposters,
     }
 
     with open(MOUNTEBANK_ALL_CONFIG, 'w') as f:
-        json.dump(cfg, f, indent=2)
+        json.dump(imposter, f, indent=2)
 
 
 def reconfigure(changedFiles, oldActivations):
     try:
-        p = subprocess.run(
-            f'/envelope/bin/reconfigure {" ".join(changedFiles)}',
-            shell=True,
-            capture_output=True,
-        )
-        p.check_returncode()
-    except Exception as e:
-        logging.error(e)
-        logging.error(f"\033[1;31m{str(p.stderr, 'utf-8')}\033[0m")
-        logging.error(f"\033[1;32m{str(p.stdout, 'utf-8')}\033[0m")
-        raise
-    if p.stderr:
-        logging.info(str(p.stderr, 'utf-8'))
+        p = None
+        try:
+            p = subprocess.run(
+                f'/envelope/bin/reconfigure {" ".join(f.path for f in changedFiles)}',
+                shell=True,
+                capture_output=True,
+            )
+            p.check_returncode()
+        except Exception as e:
+            logging.error(e)
+            if p is not None:
+                logging.error(f"\033[1;31m{str(p.stderr, 'utf-8')}\033[0m")
+                logging.error(f"\033[1;32m{str(p.stdout, 'utf-8')}\033[0m")
+            raise
+        if p.stderr:
+            logging.info(str(p.stderr, 'utf-8'))
 
-    cmds = config.parseCommands(p.stdout)
+        cmds = config.parseCommands(p.stdout)
 
-    if cmds.mountebanks:
-        cmds.activations.add(service='mountebank')
-        updateMountebankConfig(cmds.mountebanks, cmds.egresses)
-        for mb in cmds.mountebanks:
-            if mb.WhichOneof('config') == 'path':
-                cmds.watches.append(mb.path)
+        if cmds.mountebanks:
+            cmds.activations.add(service='mountebank')
+            updateMountebankConfig(cmds, cmds.mountebanks, cmds.egresses)
+            for mb in cmds.mountebanks:
+                if mb.WhichOneof('config') == 'path':
+                    cmds.watches.add(path=mb.path)
 
-    for egress in cmds.egresses:
-        cmds.proxies.add(
-            urlpath=f'/egresses/{egress.service}',
-            target=egress.target,
-        )
+        for egress in cmds.egresses:
+            cmds.proxies.add(
+                urlpath=f'/egresses/{egress.service}',
+                target=egress.target,
+            )
 
-    if cmds.proxies:
-        print(f'Generate {NGINX_EGRESSES_CONF}')
-        with open(NGINX_EGRESSES_CONF, 'w') as w:
-            for p in sorted(cmds.proxies, key=lambda p: p.urlpath):
-                print(f"""
-                    location {p.urlpath} {{
-                        rewrite ^{p.urlpath}/(.*)$ /$1 break;
-                        proxy_pass {p.target};
-                    }}
-                """, file=w)
+        if cmds.proxies:
+            print(f'Generate {NGINX_EGRESSES_CONF}')
+            with open(NGINX_EGRESSES_CONF, 'w') as w:
+                for p in sorted(cmds.proxies, key=lambda p: p.urlpath):
+                    print(f"""
+                        location {p.urlpath} {{
+                            rewrite ^{p.urlpath}/(.*)$ /$1 break;
+                            proxy_pass {p.target};
+                        }}
+                    """, file=w)
 
-    print(cmds)
+        print(cmds)
 
-    logging.info('Reload nginx config')
-    subprocess.run('nginx -t -c /etc/nginx/nginx.conf', shell=True, check=True)
-    subprocess.run('nginx -s reload', shell=True, check=True)
+        logging.info('Reload nginx config')
+        subprocess.run('nginx -t -c /etc/nginx/nginx.conf',
+                       shell=True, check=True)
+        subprocess.run('nginx -s reload', shell=True, check=True)
 
-    logging.info('Update activations')
-    newActivations = updateActivations(
-        oldActivations, cmds.activations)
+        logging.info('Update activations')
+        newActivations = updateActivations(oldActivations, cmds.activations)
 
-    return cmds.watches, newActivations
+        return cmds.watches, newActivations
+    except Exception as ex:
+        traceback.print_exception(type(ex), ex, ex.__traceback__)
+        return (changedFiles, oldActivations)
 
 
 def main():
@@ -158,6 +190,15 @@ def main():
         format='%(asctime)s.%(msecs)03d %(levelname)s %(name)s %(message)s',
         datefmt='%Y-%m-%dT%H:%M:%S',
     )
+
+    try:
+        global _validator
+        (schema, _) = config.loadAny('/envelope/lib/mountebank.schema.{}')
+        _validator = jsonschema.Draft202012Validator(schema)
+    except Exception as ex:
+        traceback.print_exception(type(ex), ex, ex.__traceback__)
+        while True:
+            time.sleep(86400)
 
     watches, activations = reconfigure([], set())
     try:

@@ -3,9 +3,6 @@ protocol: http
 stubs:
   - responses:
       - inject: |
-          class State {
-            constructor()
-          }
           (config) => {
             config.logger.info('origin called');
             config.state.requests = (config.state.requests || 0) + 1;

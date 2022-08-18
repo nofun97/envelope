@@ -10,10 +10,13 @@ wiring = json.load(open(sys.argv[1]))
 ingress = wiring['ingress']
 foo = wiring['egresses']['foo']
 bar = wiring['egresses']['bar']
+baz = wiring['egresses']['baz']
+
 
 def get(url):
     with urllib.request.urlopen(url) as f:
         return str(f.read(), 'utf-8')
+
 
 class MyServer(server.BaseHTTPRequestHandler):
     def do_GET(self):
@@ -21,6 +24,11 @@ class MyServer(server.BaseHTTPRequestHandler):
         try:
             fooData = get(foo)
             barData = get(bar)
+            bazData = get(baz)
+
+            bazObject = json.loads(bazData)
+            bazIndented = json.dumps(bazObject, indent=2)
+
             diff = difflib.context_diff(
                 fooData.split('\n'),
                 barData.split('\n'),
@@ -33,15 +41,18 @@ class MyServer(server.BaseHTTPRequestHandler):
             self.send_header("Content-type", "text/html")
             self.end_headers()
 
-            def p(s): self.wfile.write(bytes(s + '\n', 'utf-8'))
+            def p(s=''): self.wfile.write(bytes(s + '\n', 'utf-8'))
             p("<html><body><pre>")
             for line in diff:
                 p(line)
+            p()
+            p(bazIndented)
             p("</pre></body></html>")
             print('done')
         except:
             print('oops!')
             raise
+
 
 if __name__ == "__main__":
     (hostName, serverPort) = ingress.split(':')

@@ -54,6 +54,7 @@ RUN npm i -g \
     lodash \
     mountebank \
     mountebank-grpc-mts \
+    sync-request \
     typescript
 
 ENV PATH=/envelope/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \

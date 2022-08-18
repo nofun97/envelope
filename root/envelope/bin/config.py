@@ -44,6 +44,20 @@ def loadAny(pathspec, exts=['json', 'jsonnet', 'toml', 'yaml', 'yml']):
     raise Exception(f'no matches for {pathspec.format(f"{{{exts}}}")}')
 
 
+def basedir(path):
+    return os.path.dirname(path)
+
+
+def abspath(basedir, path):
+    if path.startswith('/'):
+        basedir = '/work'
+
+    if basedir is not None:
+        return os.path.join(basedir, path.lstrip('/'))
+
+    raise Exception("Can't compute abspath without basedir")
+
+
 def portAllocator(base=12000):
     def allocatePort():
         nonlocal base
@@ -88,7 +102,7 @@ class Commands(contextlib.ContextDecorator):
             target=target,
         )
 
-    def mountebank(self, service: str, pathOrData: str | object, ext: str = None):
+    def mountebank(self, service: str, pathOrData: str | object, basedir: str, ext: str = None):
         ce = (pathOrData, ext)
         match ce:
             case (str(), None):
@@ -105,11 +119,11 @@ class Commands(contextlib.ContextDecorator):
         except:
             pass
 
-        mb = self._cmds.mountebanks.add(service=service)
+        mb = self._cmds.mountebanks.add(service=service, basedir=basedir)
 
         isfilename = isinstance(pathOrData, str)
         if isfilename:
-            pathOrData = os.path.join('/work', pathOrData.lstrip('/'))
+            pathOrData = abspath(basedir, pathOrData)
             if not os.path.isfile(pathOrData):
                 raise Exception(f"missing mountebank config {pathOrData}")
             os.symlink(pathOrData, destpath)

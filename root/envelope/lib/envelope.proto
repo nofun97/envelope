@@ -30,4 +30,5 @@ message Mountebank {
         string path = 2;
         string json = 3;
     }
+    string basedir = 4;
 }

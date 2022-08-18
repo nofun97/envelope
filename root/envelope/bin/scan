@@ -6,10 +6,12 @@ import json
 import jsonschema
 import logging
 import os
+import re
 import subprocess
 import time
 import traceback
 
+import mountebank
 import config
 
 POLL_INTERVAL = 0.5
@@ -46,7 +48,6 @@ class Stat:
 
 
 def changes(watches):
-    logging.info(f'Watching: {".".join(map(repr, watches))}')
     stats = {
         watch.path: Stat(mtime=None, content=None)
         for watch in watches
@@ -54,7 +55,6 @@ def changes(watches):
     oldWatches = watches
     while True:
         if oldWatches != watches:
-            logging.info(f'Now watching: {".".join(map(repr, watches))}')
             oldWatches = watches
 
         for watch in watches:
@@ -75,24 +75,38 @@ def changes(watches):
 _validator = None
 
 
-def tweakImposter(cmds, imposter):
-    _validator.validate({'imposters': [imposter]})
+# _resolveFileRefs = mountebank.resolver()
 
+
+def pathToFile(cmds, basedir):
+    def transform(obj):
+        match obj:
+            case {'path': path}:
+                path = config.abspath(basedir, path)
+                yield path
+                with open(path) as f:
+                    return f.read()
+    return transform
+
+
+def tweakImposter(cmds, imposter, basedir):
     match imposter:
-        case {'egresses': egresses}:
-            for egress in egresses.values():
-                match egress:
-                    case {'mountebank': {'stubs': stubs}}:
-                        for stub in stubs:
-                            match stub:
-                                case {'responses': responses}:
-                                    for response in responses:
-                                        match response:
-                                            case {'inject': {'path': path}}:
-                                                cmds.watches.add(path=path)
-                                                with open(path) as f:
-                                                    data = f.decode('utf-8')
-                                                    response['inject'] = data
+        case {'stubs': stubs}:
+            for (s, stub) in enumerate(stubs):
+                match stub:
+                    case {'responses': responses}:
+                        for (r, response) in enumerate(responses):
+                            match response:
+                                case {'inject': {'path': path}}:
+                                    path = config.abspath(basedir, path)
+                                    cmds.watches.add(path=path)
+                                    with open(path) as f:
+                                        response['inject'] = f.read()
+
+    # for path in _resolveFileRefs(imposter, pathToFile(basedir)):
+    #     cmds.watches.add(path=path)
+
+    # _validator.validate({'imposters': [imposter]})
 
 
 def updateMountebankConfig(cmds, mountebanks, egresses):
@@ -107,11 +121,13 @@ def updateMountebankConfig(cmds, mountebanks, egresses):
         match mb.WhichOneof('config'):
             case 'path':
                 imposter = config.load(mb.path)
+                imposterpath = mb.path
             case 'json':
                 imposter = json.loads(mb.json)
+                imposterpath = mb.basedir
 
         imposter['port'] = port
-        tweakImposter(cmds, imposter)
+        tweakImposter(cmds, imposter, config.basedir(imposterpath))
 
         imposters.append(imposter)
 

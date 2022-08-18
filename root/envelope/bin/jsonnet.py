@@ -10,7 +10,6 @@ def load(stream, path=None, search=None):
         search[:0] = [os.path.dirname(path)]
 
     cmd = f'jsonnet {" ".join(f"-J {p}" for p in search)} -',
-    print(cmd)
     p = subprocess.run(
         cmd,
         shell=True,

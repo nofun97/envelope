@@ -11,13 +11,12 @@ import subprocess
 import time
 import traceback
 
-import mountebank
 import config
 
 POLL_INTERVAL = 0.5
 S6_RC_ACTIVATION_DIR = '/etc/s6-overlay/s6-rc.d/user/contents.d'
 
-NGINX_EGRESSES_CONF = '/etc/nginx/egresses.conf'
+NGINX_SERVERS_CONF = '/etc/nginx/servers.conf'
 
 MOUNTEBANK_ALL_CONFIG = '/etc/mountebank/all.config.json'
 
@@ -116,8 +115,6 @@ def updateMountebankConfig(cmds, mountebanks, egresses):
     for mb in mountebanks:
         port = nextPort()
 
-        egresses.add(service=mb.service, target=f'http://localhost:{port}')
-
         match mb.WhichOneof('config'):
             case 'path':
                 imposter = config.load(mb.path)
@@ -127,6 +124,16 @@ def updateMountebankConfig(cmds, mountebanks, egresses):
                 imposterpath = mb.basedir
 
         imposter['port'] = port
+        protocol = envelope_pb2.GRPC if imposter['protocol'] == 'grpc' else 0
+        scheme = "grpc" if protocol == envelope_pb2.GRPC else "http"
+
+        egresses.add(
+            service=mb.service,
+            target=f'{scheme}://localhost:{port}',
+            protocol=protocol,
+            port=mb.port,
+        )
+
         tweakImposter(cmds, imposter, config.basedir(imposterpath))
 
         imposters.append(imposter)
@@ -171,16 +178,23 @@ def reconfigure(changedFiles, oldActivations):
             cmds.proxies.add(
                 urlpath=f'/egresses/{egress.service}',
                 target=egress.target,
+                port=egress.port,
+                protocol=egress.protocol,
             )
 
         if cmds.proxies:
-            print(f'Generate {NGINX_EGRESSES_CONF}')
-            with open(NGINX_EGRESSES_CONF, 'w') as w:
+            print(f'Generate {NGINX_SERVERS_CONF}')
+            with open(NGINX_SERVERS_CONF, 'w') as w:
                 for p in sorted(cmds.proxies, key=lambda p: p.urlpath):
+                    grpc = config.getScheme(p.target) == 'grpc'
+
                     print(f"""
-                        location {p.urlpath} {{
-                            rewrite ^{p.urlpath}/(.*)$ /$1 break;
-                            proxy_pass {p.target};
+                        servers {{
+                            listen {p.port} {'http2' if grpc else ''};
+
+                            location / {{
+                                {'grpc' if grpc else 'proxy'}_pass {p.target};
+                            }}
                         }}
                     """, file=w)
 

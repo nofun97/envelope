@@ -2,6 +2,7 @@ import contextlib
 import jsonnet
 import json
 import os
+import re
 import sys
 import toml
 import yaml
@@ -9,6 +10,19 @@ import yaml
 import envelope_pb2
 
 MOUNTEBANK_CONFIG_D = '/etc/mountebank/config.d'
+
+LOCALHOST_RE = re.compile(r'(?<=://)localhost\b')
+
+
+def dockerExternalURL(url: str):
+    return LOCALHOST_RE.sub('host.docker.internal', url)
+
+
+_SCHEME_RE = re.compile(r'^(\w+)')
+
+
+def getScheme(url: str):
+    return _SCHEME_RE.match(url)[0]
 
 
 def load(path: str, ext: list[str] = None):
@@ -90,19 +104,21 @@ class Commands(contextlib.ContextDecorator):
             service=service
         )
 
-    def egress(self, service: str, target: str):
+    def egress(self, service: str, target: str, port: int = 0):
         self._cmds.egresses.add(
             service=service,
             target=target,
+            port=port,
         )
 
-    def proxy(self, urlpath: str, target: str):
+    def proxy(self, urlpath: str, target: str, port: int = 0):
         self._cmds.proxies.add(
             urlpath=urlpath,
             target=target,
+            port=port,
         )
 
-    def mountebank(self, service: str, pathOrData: str | object, basedir: str, ext: str = None):
+    def mountebank(self, service: str, pathOrData: str | object, basedir: str, ext: str = None, port: int = 0):
         ce = (pathOrData, ext)
         match ce:
             case (str(), None):
@@ -119,7 +135,8 @@ class Commands(contextlib.ContextDecorator):
         except:
             pass
 
-        mb = self._cmds.mountebanks.add(service=service, basedir=basedir)
+        mb = self._cmds.mountebanks.add(
+            service=service, basedir=basedir, port=port)
 
         isfilename = isinstance(pathOrData, str)
         if isfilename:

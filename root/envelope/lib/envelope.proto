@@ -17,11 +17,13 @@ message Activate { string service = 1; }
 message Egress {
     string service = 1;
     string target = 2;
+    uint32 port = 3;
 }
 
 message Proxy {
     string urlpath = 1;
     string target = 2;
+    uint32 port = 3;
 }
 
 message Mountebank {
@@ -31,4 +33,5 @@ message Mountebank {
         string json = 3;
     }
     string basedir = 4;
+    uint32 port = 5;
 }

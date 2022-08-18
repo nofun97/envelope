@@ -14,18 +14,16 @@ CONFIG_FILE = '/work/config.{}'
 WIRING_FILE = '/work/wiring.env'
 
 
-LOCALHOST_RE = re.compile(r'(?<=://)localhost\b')
-
-
 def computeEgresses(cmds, cfg, basedir):
     for (service, egress) in sorted(cfg['egresses'].items()):
         match egress:
-            case list():
-                if len(egress) != 1:
+            case [egress, *tail]:
+                if tail:
                     raise NotImplementedError("len(egress) != 1 not supported")
-                [egress] = egress
+
+        match egress:
             case str():
-                egress = LOCALHOST_RE.sub('host.docker.internal', egress)
+                egress = config.dockerExternalURL(egress)
                 cmds.proxy(f'/egresses/{service}', egress)
             case {'mountebank': mb}:
                 cmds.mountebank(service, mb, basedir)

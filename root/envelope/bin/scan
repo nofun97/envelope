@@ -132,17 +132,18 @@ def updateMountebankConfig(cmds, mountebanks, egresses):
 def reconfigureAdminConfig(port: int):
     with open(NGINX_ADMIN_CONF, 'w') as f:
         print(f"""
-        server {{
-            listen {port};
+            server {{
+                listen {port};
 
-            location /admin {{
-                alias /web;
-                absolute_redirect off;
+                location / {{
+                    root /web;
+                    absolute_redirect off;
+                }}
+
+                include /etc/s6-overlay/s6-rc.d/*/nginx.http.server.conf;
             }}
+        """, file=f)
 
-            include /etc/s6-overlay/s6-rc.d/*/nginx.http.server.conf;
-        }}
-        """)
 
 def reconfigure(changedFiles, oldActivations):
     try:
@@ -195,6 +196,8 @@ def reconfigure(changedFiles, oldActivations):
                     """, file=w)
 
         print(cmds)
+
+        reconfigureAdminConfig(cmds.basePort)
 
         logging.info('Reload nginx config')
         subprocess.run('nginx -t -c /etc/nginx/nginx.conf',

@@ -44,7 +44,7 @@ def main():
     with config.Commands() as cmds:
         (cfg, path) = config.loadAny(CONFIG_FILE)
 
-        computeEgresses(cmds, cfg, os.path.dirname(path))
+        computeEgresses(cmds, cfg, config.basedir(path))
         generateWiringFile(cfg)
 
         cmds.watch(path)

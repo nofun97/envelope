@@ -1,6 +1,7 @@
 name: origin
 protocol: http
+key: {path: key.pem}
+cert: {path: cert.pem}
 stubs:
   - responses:
-      - inject:
-          path: mb.js
+      - inject: {path: mb.js}

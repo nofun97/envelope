@@ -207,7 +207,10 @@ s.schema('https://json-schema.org/draft/2020-12/schema', {
       s.ref('injectPred'),
     ]),
 
-    local predicate(type) = s.object({[type]: s.map(true), caseSensitive: s.boolean}),
+    local predicate(type) = s.object({
+        [type]: s.map(true),
+        caseSensitive: s.boolean,
+    }),
 
     equalsPred: predicate('equals'),
     deepEqualsPred: predicate('deepEquals'),

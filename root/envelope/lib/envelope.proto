@@ -11,8 +11,6 @@ message Commands {
     uint32 basePort = 6;
 }
 
-message Nginx { uint32 port = 1; }
-
 message Watch { string path = 1; }
 
 message Activate { string service = 1; }

@@ -6,7 +6,6 @@ import json
 import jsonschema
 import logging
 import os
-import re
 import subprocess
 import time
 import traceback
@@ -75,38 +74,22 @@ def changes(watches):
 _validator = None
 
 
-# _resolveFileRefs = mountebank.resolver()
-
-
-def pathToFile(cmds, basedir):
-    def transform(obj):
+def pathToFile(basedir):
+    def transform(obj, put):
         match obj:
             case {'path': path}:
                 path = config.abspath(basedir, path)
                 yield path
                 with open(path) as f:
-                    return f.read()
+                    put(f.read())
     return transform
 
 
 def tweakImposter(cmds, imposter, basedir):
-    match imposter:
-        case {'stubs': stubs}:
-            for (s, stub) in enumerate(stubs):
-                match stub:
-                    case {'responses': responses}:
-                        for (r, response) in enumerate(responses):
-                            match response:
-                                case {'inject': {'path': path}}:
-                                    path = config.abspath(basedir, path)
-                                    cmds.watches.add(path=path)
-                                    with open(path) as f:
-                                        response['inject'] = f.read()
+    for path in mountebank.walkFileRefs(imposter, pathToFile(basedir)):
+        cmds.watches.add(path=path)
 
-    # for path in _resolveFileRefs(imposter, pathToFile(basedir)):
-    #     cmds.watches.add(path=path)
-
-    # _validator.validate({'imposters': [imposter]})
+    _validator.validate({'imposters': [imposter]})
 
 
 def updateMountebankConfig(cmds, mountebanks, egresses):

@@ -1,2 +1,4 @@
 /config.*
 /wiring.env
+/mb*.log
+/mb*.pid

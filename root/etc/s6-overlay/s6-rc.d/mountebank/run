@@ -2,6 +2,5 @@
 cd /work
 /usr/local/bin/mb start \
     --allowInjection \
-    --localOnly \
     --protofile /etc/mountebank/protocols.json \
     --configfile /etc/mountebank/all.config.json

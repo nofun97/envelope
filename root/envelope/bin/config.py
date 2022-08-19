@@ -72,11 +72,15 @@ def abspath(basedir, path):
     raise Exception("Can't compute abspath without basedir")
 
 
-def portAllocator(base=12000):
+def portAllocator(start=4200, end=None):
+    end = end or start
+
     def allocatePort():
-        nonlocal base
-        port = base
-        base += 1
+        nonlocal start
+        port = start
+        start += 1
+        if start == end:
+            raise Exception("out of ports")
         return port
     return allocatePort
 
@@ -88,9 +92,9 @@ def parseCommands(cmds: bytearray):
 
 
 class Commands(contextlib.ContextDecorator):
-    def __init__(self, out=sys.stdout.buffer):
+    def __init__(self, out=sys.stdout.buffer, basePort=4200):
         self._out = out
-        self._cmds = envelope_pb2.Commands()
+        self._cmds = envelope_pb2.Commands(basePort=basePort)
 
     def __enter__(self):
         return self
@@ -111,9 +115,8 @@ class Commands(contextlib.ContextDecorator):
             port=port,
         )
 
-    def proxy(self, urlpath: str, target: str, port: int = 0):
+    def proxy(self, target: str, port: int = 0):
         self._cmds.proxies.add(
-            urlpath=urlpath,
             target=target,
             port=port,
         )

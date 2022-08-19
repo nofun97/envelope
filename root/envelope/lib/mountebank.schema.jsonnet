@@ -65,7 +65,7 @@ s.schema('https://json-schema.org/draft/2020-12/schema', {
       recordRequests: s.boolean,
       stubs: s.array(s.object({
         responses: s.array(s.ref('response')),
-        predicates: s.array(s.ref('predicate')),
+        predicates: s.array(s.ref('predicates')),
         matches: s.object(),  // s.ref('match'),
       })),
       defaultResponse: s.ref('response'),
@@ -81,6 +81,11 @@ s.schema('https://json-schema.org/draft/2020-12/schema', {
           href: s.url,
         }),
       }),
+      loglevel: s.string,
+
+      # grpc plugin
+      services: s.map(s.object({file: s.string})),
+      options: s.object({protobufjs: s.object({includeDirs: s.array(s.string)})}),
     }),
     lookup: s.object({
       key: s.object({
@@ -160,6 +165,9 @@ s.schema('https://json-schema.org/draft/2020-12/schema', {
           headers: s.map(s.string),
           body: s.string,
           _mode: s.string,
+
+          # grpc plugin
+          value: s.map(true),
         }),
         repeat: s.integer,
         behaviors: s.array(s.ref('behaviour')),
@@ -199,7 +207,7 @@ s.schema('https://json-schema.org/draft/2020-12/schema', {
       s.ref('injectPred'),
     ]),
 
-    local predicate(type) = s.object(),
+    local predicate(type) = s.object({[type]: s.map(true), caseSensitive: s.boolean}),
 
     equalsPred: predicate('equals'),
     deepEqualsPred: predicate('deepEquals'),
@@ -210,7 +218,7 @@ s.schema('https://json-schema.org/draft/2020-12/schema', {
     existsPred: predicate('exists'),
     notPred: predicate('not'),
     orPred: predicate('or'),
-    andPred: predicate('and').require,
+    andPred: predicate('and'),
     injectPred: predicate('inject'),
   },
 }

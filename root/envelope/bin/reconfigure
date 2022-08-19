@@ -14,19 +14,22 @@ CONFIG_FILE = '/work/config.{}'
 WIRING_FILE = '/work/wiring.env'
 
 
-def computeEgresses(cmds, cfg, basedir):
+def computeEgresses(cmds, cfg, basedir, start, end):
+    nextPort = config.portAllocator(start, end)
     for (service, egress) in sorted(cfg['egresses'].items()):
         match egress:
             case [egress, *tail]:
                 if tail:
-                    raise NotImplementedError("len(egress) != 1 not supported")
+                    raise NotImplementedError(
+                        "len(egress) != 1 not supported")
 
         match egress:
             case str():
                 egress = config.dockerExternalURL(egress)
-                cmds.proxy(f'/egresses/{service}', egress)
+                cmds.proxy(egress, port=nextPort())
             case {'mountebank': mb}:
-                cmds.mountebank(service, mb, basedir)
+                # TODO: port?
+                cmds.mountebank(service, mb, basedir, port=nextPort())
 
 
 def generateWiringFile(cfg):
@@ -41,10 +44,15 @@ def generateWiringFile(cfg):
 
 
 def main():
-    with config.Commands() as cmds:
-        (cfg, path) = config.loadAny(CONFIG_FILE)
+    (cfg, path) = config.loadAny(CONFIG_FILE)
+    match cfg:
+        case {'envelope': {'expose': {'first': first, 'last': last}}}:
+            pass
+        case _:
+            first, last = 4200, 4299
 
-        computeEgresses(cmds, cfg, config.basedir(path))
+    with config.Commands(basePort=first) as cmds:
+        computeEgresses(cmds, cfg, config.basedir(path), first+1, last+1)
         generateWiringFile(cfg)
 
         cmds.watch(path)

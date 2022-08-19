@@ -9,6 +9,7 @@ import os
 import subprocess
 import time
 import traceback
+import mountebank
 
 import config
 
@@ -16,6 +17,7 @@ POLL_INTERVAL = 0.5
 S6_RC_ACTIVATION_DIR = '/etc/s6-overlay/s6-rc.d/user/contents.d'
 
 NGINX_SERVERS_CONF = '/etc/nginx/servers.conf'
+NGINX_ADMIN_CONF = '/etc/nginx/admin.conf'
 
 MOUNTEBANK_ALL_CONFIG = '/etc/mountebank/all.config.json'
 
@@ -107,13 +109,11 @@ def updateMountebankConfig(cmds, mountebanks, egresses):
                 imposterpath = mb.basedir
 
         imposter['port'] = port
-        protocol = envelope_pb2.GRPC if imposter['protocol'] == 'grpc' else 0
-        scheme = "grpc" if protocol == envelope_pb2.GRPC else "http"
+        scheme = 'grpc' if imposter['protocol'] == 'grpc' else 'http'
 
         egresses.add(
             service=mb.service,
             target=f'{scheme}://localhost:{port}',
-            protocol=protocol,
             port=mb.port,
         )
 
@@ -128,6 +128,21 @@ def updateMountebankConfig(cmds, mountebanks, egresses):
     with open(MOUNTEBANK_ALL_CONFIG, 'w') as f:
         json.dump(imposter, f, indent=2)
 
+
+def reconfigureAdminConfig(port: int):
+    with open(NGINX_ADMIN_CONF, 'w') as f:
+        print(f"""
+        server {{
+            listen {port};
+
+            location /admin {{
+                alias /web;
+                absolute_redirect off;
+            }}
+
+            include /etc/s6-overlay/s6-rc.d/*/nginx.http.server.conf;
+        }}
+        """)
 
 def reconfigure(changedFiles, oldActivations):
     try:
@@ -159,20 +174,18 @@ def reconfigure(changedFiles, oldActivations):
 
         for egress in cmds.egresses:
             cmds.proxies.add(
-                urlpath=f'/egresses/{egress.service}',
                 target=egress.target,
                 port=egress.port,
-                protocol=egress.protocol,
             )
 
         if cmds.proxies:
             print(f'Generate {NGINX_SERVERS_CONF}')
             with open(NGINX_SERVERS_CONF, 'w') as w:
-                for p in sorted(cmds.proxies, key=lambda p: p.urlpath):
+                for p in sorted(cmds.proxies, key=lambda p: p.port):
                     grpc = config.getScheme(p.target) == 'grpc'
 
                     print(f"""
-                        servers {{
+                        server {{
                             listen {p.port} {'http2' if grpc else ''};
 
                             location / {{

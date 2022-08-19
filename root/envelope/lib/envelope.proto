@@ -8,7 +8,10 @@ message Commands {
     repeated Egress egresses = 3;
     repeated Proxy proxies = 4;
     repeated Mountebank mountebanks = 5;
+    uint32 basePort = 6;
 }
+
+message Nginx { uint32 port = 1; }
 
 message Watch { string path = 1; }
 
@@ -21,7 +24,7 @@ message Egress {
 }
 
 message Proxy {
-    string urlpath = 1;
+    reserved 1; // string urlpath = 1;
     string target = 2;
     uint32 port = 3;
 }
